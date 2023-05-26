@@ -6,8 +6,8 @@ use axum::extract::{FromRequestParts, Path, State};
 use axum::http::request::Parts;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
-use axum::{async_trait, Router};
+use axum::routing::{delete, get, post};
+use axum::{async_trait, Json, Router};
 use axum_auth::AuthBearer;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
@@ -33,7 +33,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let router = Router::new()
         .route("/", get(root))
-        .route("/books/:book_name", post(create_book).delete(delete_book))
+        .route("/book/", post(create_book))
+        .route("/book/:book_name", delete(delete_book).get(get_book))
+        .route("/book/:book_name/currency/", post(create_currency))
+        .route(
+            "/book/:book_name/currency/:currency_symbol",
+            get(get_currency).delete(delete_currency),
+        )
         .with_state(pool);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
@@ -82,14 +88,16 @@ async fn root(claim: Claim) -> impl IntoResponse {
 
 async fn create_book(
     claim: Claim,
-    Path(book_name): Path<String>,
     State(pool): State<ConnectionPool>,
+    Json(user_book): Json<finance_lib::Book>,
 ) -> Result<Response, Response> {
     let conn = &mut get_connection(&pool)?;
-    let book = Book {
-        name: book_name.clone(),
-        user_name: claim.user.name,
-    };
+    let book = Book::from_user_struct(
+        &user_book,
+        AddedInformationForBook {
+            user_name: &claim.user.name,
+        },
+    );
     let result = diesel::insert_into(books::table)
         .values(&book)
         .execute(conn);
@@ -97,15 +105,15 @@ async fn create_book(
         if let diesel::result::Error::DatabaseError(database_error, _) = e {
             if let DatabaseErrorKind::UniqueViolation = database_error {
                 return Err((
-                    StatusCode::BAD_REQUEST,
-                    format!("Book '{}' already exists.", book_name),
+                    StatusCode::CONFLICT,
+                    format!("Book '{}' already exists.", book.name),
                 )
                     .into_response());
             }
         }
         Err((StatusCode::INTERNAL_SERVER_ERROR, "Error").into_response())
     } else {
-        Ok(format!("Book '{}' created.", book_name).into_response())
+        Ok(format!("Book '{}' created.", book.name).into_response())
     }
 }
 
@@ -119,7 +127,7 @@ async fn delete_book(
         .filter(
             books::dsl::name
                 .eq(&book_name)
-                .and(books::dsl::user_name.eq(claim.user.name)),
+                .and(books::dsl::user_name.eq(&claim.user.name)),
         )
         .execute(conn);
     if let Ok(amount) = result {
@@ -127,12 +135,124 @@ async fn delete_book(
             Ok(format!("Book {} deleted", &book_name).into_response())
         } else {
             Err((
-                StatusCode::BAD_REQUEST,
+                StatusCode::NOT_FOUND,
                 format!("Book {} does not exist.", &book_name),
             )
                 .into_response())
         }
     } else {
         Err((StatusCode::INTERNAL_SERVER_ERROR, "Error").into_response())
+    }
+}
+
+async fn get_book(
+    claim: Claim,
+    Path(book_name): Path<String>,
+    State(pool): State<ConnectionPool>,
+) -> Result<Response, Response> {
+    let conn = &mut get_connection(&pool)?;
+    let result = books::table
+        .filter(
+            books::dsl::name
+                .eq(&book_name)
+                .and(books::dsl::user_name.eq(&claim.user.name)),
+        )
+        .load::<Book>(conn);
+    if let Ok(queried) = result {
+        if queried.len() == 1 {
+            Ok(Json(queried[0].to_user_struct()).into_response())
+        } else {
+            Err((StatusCode::NOT_FOUND).into_response())
+        }
+    } else {
+        Err((StatusCode::INTERNAL_SERVER_ERROR).into_response())
+    }
+}
+
+async fn create_currency(
+    claim: Claim,
+    State(pool): State<ConnectionPool>,
+    Path(book_name): Path<String>,
+    Json(user_currency): Json<finance_lib::Currency>,
+) -> Result<Response, Response> {
+    let server_currency = Currency::from_user_struct(
+        &user_currency,
+        AddedInformationForCurrency {
+            user_name: &claim.user.name,
+            book_name: &book_name,
+        },
+    );
+    let conn = &mut get_connection(&pool)?;
+    let result = diesel::insert_into(currencies::table)
+        .values(server_currency)
+        .execute(conn);
+    if let Err(e) = result {
+        if let diesel::result::Error::DatabaseError(database_error_kind, _) = e {
+            match database_error_kind {
+                DatabaseErrorKind::ForeignKeyViolation => {
+                    return Err((StatusCode::BAD_REQUEST, "Book does not exist.").into_response())
+                }
+                DatabaseErrorKind::UniqueViolation => {
+                    return Err((StatusCode::CONFLICT, "Currency alread exists.").into_response())
+                }
+                _ => {}
+            }
+        }
+        Err((StatusCode::INTERNAL_SERVER_ERROR).into_response())
+    } else {
+        Ok(().into_response())
+    }
+}
+
+async fn get_currency(
+    claim: Claim,
+    Path((book_name, currency_symbol)): Path<(String, String)>,
+    State(pool): State<ConnectionPool>,
+) -> Result<Response, Response> {
+    let conn = &mut get_connection(&pool)?;
+    let result = currencies::table
+        .filter(
+            currencies::dsl::symbol.eq(&currency_symbol).and(
+                currencies::dsl::book_name
+                    .eq(&book_name)
+                    .and(currencies::dsl::user_name.eq(&claim.user.name)),
+            ),
+        )
+        .load::<Currency>(conn);
+    if let Ok(list) = result {
+        if list.len() == 1 {
+            let currency = &list[0];
+            Ok(Json(currency.to_user_struct()).into_response())
+        } else {
+            Err((StatusCode::NOT_FOUND).into_response())
+        }
+    } else {
+        Err((StatusCode::INTERNAL_SERVER_ERROR).into_response())
+    }
+}
+
+async fn delete_currency(
+    claim: Claim,
+    Path((book_name, currency_symbol)): Path<(String, String)>,
+    State(pool): State<ConnectionPool>,
+) -> Result<Response, Response> {
+    let conn = &mut get_connection(&pool)?;
+    let result = diesel::delete(currencies::table)
+        .filter(
+            currencies::dsl::user_name.eq(&claim.user.name).and(
+                currencies::dsl::book_name
+                    .eq(&book_name)
+                    .and(currencies::dsl::symbol.eq(&currency_symbol)),
+            ),
+        )
+        .execute(conn);
+    if let Ok(deleted_amount) = result {
+        if deleted_amount >= 1 {
+            Ok(().into_response())
+        } else {
+            Err((StatusCode::NOT_FOUND).into_response())
+        }
+    } else {
+        Err((StatusCode::INTERNAL_SERVER_ERROR).into_response())
     }
 }

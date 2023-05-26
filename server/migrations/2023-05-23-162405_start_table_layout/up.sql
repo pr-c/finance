@@ -10,6 +10,7 @@ CREATE TABLE books
 (
     name      VARCHAR(100) NOT NULL,
     user_name VARCHAR(100) NOT NULL,
+    description VARCHAR(1000),
     PRIMARY KEY (name, user_name),
     FOREIGN KEY (user_name) REFERENCES users (name) ON DELETE CASCADE ON UPDATE CASCADE
 );
@@ -27,10 +28,11 @@ CREATE TABLE accounts
 
 CREATE TABLE currencies
 (
-    symbol      VARCHAR(10)  NOT NULL,
-    description VARCHAR(1000),
-    user_name   VARCHAR(100) NOT NULL,
-    book_name   VARCHAR(100) NOT NULL,
+    symbol         VARCHAR(10)  NOT NULL,
+    description    VARCHAR(1000),
+    user_name      VARCHAR(100) NOT NULL,
+    book_name      VARCHAR(100) NOT NULL,
+    decimal_points INTEGER      NOT NULL,
     PRIMARY KEY (symbol, book_name, user_name),
     FOREIGN KEY (user_name) REFERENCES users (name) ON DELETE CASCADE ON UPDATE CASCADE,
     FOREIGN KEY (book_name) REFERENCES books (name) ON DELETE CASCADE ON UPDATE CASCADE
@@ -38,9 +40,9 @@ CREATE TABLE currencies
 
 CREATE TABLE transactions
 (
-    id        INTEGER      NOT NULL AUTO_INCREMENT,
-    book_name VARCHAR(100) NOT NULL,
-    user_name VARCHAR(100) NOT NULL,
+    id        INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
+    book_name VARCHAR(100)     NOT NULL,
+    user_name VARCHAR(100)     NOT NULL,
     notes     VARCHAR(1000),
     PRIMARY KEY (id, book_name, user_name),
     FOREIGN KEY (book_name) REFERENCES accounts (name) ON DELETE CASCADE ON UPDATE CASCADE,
@@ -49,13 +51,13 @@ CREATE TABLE transactions
 
 CREATE TABLE postings
 (
-    id             INTEGER      NOT NULL AUTO_INCREMENT,
-    transaction_id INTEGER      NOT NULL,
-    book_name      VARCHAR(100) NOT NULL,
-    user_name      VARCHAR(100) NOT NULL,
-    account        VARCHAR(100) NOT NULL,
-    currency       VARCHAR(10)  NOT NULL,
-    amount         INTEGER      NOT NULL,
+    id             INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
+    transaction_id INTEGER UNSIGNED NOT NULL,
+    book_name      VARCHAR(100)     NOT NULL,
+    user_name      VARCHAR(100)     NOT NULL,
+    account        VARCHAR(100)     NOT NULL,
+    currency       VARCHAR(10)      NOT NULL,
+    amount         INTEGER          NOT NULL,
     PRIMARY KEY (id, transaction_id, book_name, user_name),
     FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE CASCADE ON UPDATE CASCADE,
     FOREIGN KEY (book_name) REFERENCES books (name) ON DELETE CASCADE ON UPDATE CASCADE,

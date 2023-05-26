@@ -13,6 +13,7 @@ diesel::table! {
     books (name, user_name) {
         name -> Varchar,
         user_name -> Varchar,
+        description -> Nullable<Varchar>,
     }
 }
 
@@ -22,13 +23,14 @@ diesel::table! {
         description -> Nullable<Varchar>,
         user_name -> Varchar,
         book_name -> Varchar,
+        decimal_points -> Integer,
     }
 }
 
 diesel::table! {
     postings (id, transaction_id, book_name, user_name) {
-        id -> Integer,
-        transaction_id -> Integer,
+        id -> Unsigned<Integer>,
+        transaction_id -> Unsigned<Integer>,
         book_name -> Varchar,
         user_name -> Varchar,
         account -> Varchar,
@@ -39,7 +41,7 @@ diesel::table! {
 
 diesel::table! {
     transactions (id, book_name, user_name) {
-        id -> Integer,
+        id -> Unsigned<Integer>,
         book_name -> Varchar,
         user_name -> Varchar,
         notes -> Nullable<Varchar>,
