@@ -40,6 +40,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             "/book/:book_name/currency/:currency_symbol",
             get(get_currency).delete(delete_currency),
         )
+        .route("/book/:book_name/account/", post(create_account))
+        .route("/book/:book_name/account/:account_name", delete(delete_account))
         .with_state(pool);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
@@ -254,5 +256,52 @@ async fn delete_currency(
         }
     } else {
         Err((StatusCode::INTERNAL_SERVER_ERROR).into_response())
+    }
+}
+
+async fn create_account(
+    claim: Claim,
+    Path(book_name): Path<String>,
+    State(pool): State<ConnectionPool>,
+    Json(user_account): Json<finance_lib::Account>,
+) -> Result<Response, Response> {
+    let conn = &mut get_connection(&pool)?;
+    let account = Account::from_user_struct(
+        &user_account,
+        AddedInformationForAccount {
+            book_name: &book_name,
+            user_name: &claim.user.name,
+        },
+    );
+    let result = diesel::insert_into(accounts::table)
+        .values(&account)
+        .execute(conn);
+    match result {
+        Ok(1) => Ok(().into_response()),
+        Err(diesel::result::Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => {
+            Err((StatusCode::CONFLICT).into_response())
+        }
+        _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
+    }
+}
+async fn delete_account(
+    claim: Claim,
+    Path((book_name, account_name)): Path<(String, String)>,
+    State(pool): State<ConnectionPool>,
+) -> Result<Response, Response> {
+    let conn = &mut get_connection(&pool)?;
+    let result = diesel::delete(accounts::table)
+        .filter(
+            accounts::dsl::user_name.eq(claim.user.name).and(
+                accounts::dsl::name
+                    .eq(account_name)
+                    .and(accounts::dsl::book_name.eq(book_name)),
+            ),
+        )
+        .execute(conn);
+    match result {
+        Ok(1) => Ok(().into_response()),
+        Ok(_) => Err((StatusCode::NOT_FOUND).into_response()),
+        _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
     }
 }

@@ -17,6 +17,12 @@ pub struct Currency {
     pub decimal_points: i32,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct Account {
+    pub name: String,
+    pub description: Option<String>
+}
+
 impl IntoResponse for Currency {
     fn into_response(self) -> Response {
         object_to_response(&self)

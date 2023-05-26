@@ -20,10 +20,10 @@ diesel::table! {
 diesel::table! {
     currencies (symbol, book_name, user_name) {
         symbol -> Varchar,
+        decimal_points -> Integer,
         description -> Nullable<Varchar>,
         user_name -> Varchar,
         book_name -> Varchar,
-        decimal_points -> Integer,
     }
 }
 
@@ -42,9 +42,9 @@ diesel::table! {
 diesel::table! {
     transactions (id, book_name, user_name) {
         id -> Unsigned<Integer>,
+        description -> Nullable<Varchar>,
         book_name -> Varchar,
         user_name -> Varchar,
-        notes -> Nullable<Varchar>,
     }
 }
 
