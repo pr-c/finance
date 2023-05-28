@@ -199,6 +199,101 @@ impl<'a> FromUserStruct<'a> for NewTransaction {
     }
 }
 
+#[derive(Queryable)]
+#[diesel(table_name = postings)]
+pub struct Posting {
+    pub id: u32,
+    pub transaction_id: u32,
+    pub valuta: Option<NaiveDateTime>,
+    pub book_name: String,
+    pub user_name: String,
+    pub account_name: String,
+    pub currency: String,
+    pub amount: i32,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = postings)]
+pub struct NewPosting {
+    pub transaction_id: u32,
+    pub valuta: Option<NaiveDateTime>,
+    pub book_name: String,
+    pub user_name: String,
+    pub account_name: String,
+    pub currency: String,
+    pub amount: i32,
+}
+
+pub struct AddedInformationForPosting<'a> {
+    pub user_name: &'a String,
+    pub book_name: &'a String,
+    pub transaction_id: &'a u32,
+}
+
+impl<'a> FromUserStruct<'a> for Posting {
+    type AddedInformation = AddedInformationForPosting<'a>;
+    type UserStruct = finance_lib::Posting;
+    fn from_user_struct(
+        user_struct: &Self::UserStruct,
+        added_information: Self::AddedInformation,
+    ) -> Self {
+        Self {
+            account_name: user_struct.account_name.clone(),
+            book_name: added_information.book_name.clone(),
+            amount: user_struct.amount,
+            currency: user_struct.currency.clone(),
+            id: user_struct.id,
+            transaction_id: *added_information.transaction_id,
+            user_name: added_information.user_name.clone(),
+            valuta: user_struct.valuta.clone(),
+        }
+    }
+}
+
+impl ToUserStruct for Posting {
+    type UserStruct = finance_lib::Posting;
+    fn to_user_struct(&self) -> Self::UserStruct {
+        Self::UserStruct {
+            account_name: self.account_name.clone(),
+            amount: self.amount,
+            currency: self.currency.clone(),
+            id: self.id,
+            valuta: self.valuta.clone(),
+        }
+    }
+}
+
+impl<'a> FromUserStruct<'a> for NewPosting {
+    type AddedInformation = AddedInformationForPosting<'a>;
+    type UserStruct = finance_lib::NewPosting;
+    fn from_user_struct(
+        user_struct: &Self::UserStruct,
+        added_information: Self::AddedInformation,
+    ) -> Self {
+        Self {
+            account_name: user_struct.account_name.clone(),
+            book_name: added_information.book_name.clone(),
+            amount: user_struct.amount,
+            currency: user_struct.currency.clone(),
+            transaction_id: *added_information.transaction_id,
+            user_name: added_information.user_name.clone(),
+            valuta: user_struct.valuta.clone(),
+        }
+    }
+}
+
+impl ToUserStruct for NewPosting {
+    type UserStruct = finance_lib::NewPosting;
+    fn to_user_struct(&self) -> Self::UserStruct {
+        Self::UserStruct {
+            account_name: self.account_name.clone(),
+            amount: self.amount,
+            currency: self.currency.clone(),
+            valuta: self.valuta.clone(),
+        }
+    }
+}
+
 pub trait ToUserStruct {
     type UserStruct;
 

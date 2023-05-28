@@ -34,7 +34,7 @@ diesel::table! {
         valuta -> Nullable<Timestamp>,
         book_name -> Varchar,
         user_name -> Varchar,
-        account -> Varchar,
+        account_name -> Varchar,
         currency -> Varchar,
         amount -> Integer,
     }

@@ -32,3 +32,20 @@ pub struct NewTransaction {
     pub description: Option<String>,
     pub time: Option<NaiveDateTime>,
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct Posting {
+    pub id: u32,
+    pub valuta: Option<NaiveDateTime>,
+    pub account_name: String,
+    pub currency: String,
+    pub amount: i32,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct NewPosting {
+    pub valuta: Option<NaiveDateTime>,
+    pub account_name: String,
+    pub currency: String,
+    pub amount: i32,
+}
