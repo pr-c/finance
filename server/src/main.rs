@@ -19,6 +19,10 @@ use std::net::SocketAddr;
 
 type ConnectionPool = Pool<ConnectionManager<MysqlConnection>>;
 
+sql_function!(
+    fn last_insert_id() -> Unsigned<Integer>
+);
+
 fn get_connection(
     pool: &ConnectionPool,
 ) -> Result<PooledConnection<ConnectionManager<MysqlConnection>>, Response> {
@@ -45,6 +49,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             "/book/:book_name/account/:account_name",
             delete(delete_account).get(get_account),
         )
+        .route("/book/:book_name/transaction", post(create_transaction))
+        .route("/book/:book_name/transaction/:transaction_id", delete(delete_transaction))
         .with_state(pool);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
@@ -182,7 +188,7 @@ async fn create_currency(
 ) -> Result<Response, Response> {
     let server_currency = Currency::from_user_struct(
         &user_currency,
-        AddedInformationForCurrency {
+        UserAndBookInfo {
             user_name: &claim.user.name,
             book_name: &book_name,
         },
@@ -271,7 +277,7 @@ async fn create_account(
     let conn = &mut get_connection(&pool)?;
     let account = Account::from_user_struct(
         &user_account,
-        AddedInformationForAccount {
+        UserAndBookInfo {
             book_name: &book_name,
             user_name: &claim.user.name,
         },
@@ -334,5 +340,57 @@ async fn get_account(
             }
         }
         _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
+    }
+}
+
+async fn create_transaction(
+    claim: Claim,
+    Path(book_name): Path<String>,
+    State(pool): State<ConnectionPool>,
+    Json(user_transaction): Json<finance_lib::NewTransaction>,
+) -> Result<Response, Response> {
+    let mut conn = get_connection(&pool)?;
+    let transaction = NewTransaction::from_user_struct(
+        &user_transaction,
+        UserAndBookInfo {
+            book_name: &book_name,
+            user_name: &claim.user.name,
+        },
+    );
+    let result = diesel::insert_into(transactions::table)
+        .values(&transaction)
+        .execute(&mut conn);
+    match result {
+        Ok(1) => {
+            let id_result = diesel::select(last_insert_id()).get_result::<u32>(&mut conn);
+            match id_result {
+                Ok(id) => Ok((Json(id)).into_response()),
+                _ => Err((StatusCode::IM_A_TEAPOT).into_response()),
+            }
+        }
+        Err(diesel::result::Error::DatabaseError(DatabaseErrorKind::ForeignKeyViolation, e)) => {
+            Err((StatusCode::NOT_FOUND, e.message().to_string()).into_response())
+        }
+        _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
+    }
+}
+
+async fn delete_transaction(
+    claim: Claim,
+    Path((book_name, transaction_id)): Path<(String, u32)>,
+    State(pool): State<ConnectionPool>,
+) -> Result<Response, Response> {
+    let mut conn = get_connection(&pool)?;
+    let result = diesel::delete(transactions::table).filter(
+        transactions::dsl::user_name.eq(claim.user.name).and(
+            transactions::dsl::book_name
+                .eq(book_name)
+                .and(transactions::dsl::id.eq(transaction_id)),
+        ),
+    ).execute(&mut conn);
+    match result {
+        Ok(1) => Ok(().into_response()),
+        Ok(_) => Err((StatusCode::NOT_FOUND).into_response()),
+        Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response())
     }
 }

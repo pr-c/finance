@@ -1,4 +1,5 @@
 use crate::schema::*;
+use chrono::{NaiveDateTime, Utc};
 use diesel::prelude::*;
 
 #[derive(Queryable)]
@@ -66,14 +67,14 @@ impl ToUserStruct for Currency {
     }
 }
 
-pub struct AddedInformationForCurrency<'a> {
+pub struct UserAndBookInfo<'a> {
     pub user_name: &'a String,
     pub book_name: &'a String,
 }
 
 impl<'a> FromUserStruct<'a> for Currency {
     type UserStruct = finance_lib::Currency;
-    type AddedInformation = AddedInformationForCurrency<'a>;
+    type AddedInformation = UserAndBookInfo<'a>;
 
     fn from_user_struct(
         user_struct: &finance_lib::Currency,
@@ -92,10 +93,10 @@ impl<'a> FromUserStruct<'a> for Currency {
 #[derive(Queryable, Insertable)]
 #[diesel(table_name = accounts)]
 pub struct Account {
-    name: String,
-    description: Option<String>,
-    user_name: String,
-    book_name: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub user_name: String,
+    pub book_name: String,
 }
 
 impl ToUserStruct for Account {
@@ -108,13 +109,8 @@ impl ToUserStruct for Account {
     }
 }
 
-pub struct AddedInformationForAccount<'a> {
-    pub user_name: &'a String,
-    pub book_name: &'a String,
-}
-
 impl<'a> FromUserStruct<'a> for Account {
-    type AddedInformation = AddedInformationForAccount<'a>;
+    type AddedInformation = UserAndBookInfo<'a>;
     type UserStruct = finance_lib::Account;
     fn from_user_struct(
         user_struct: &Self::UserStruct,
@@ -125,6 +121,80 @@ impl<'a> FromUserStruct<'a> for Account {
             description: user_struct.description.clone(),
             book_name: added_information.book_name.clone(),
             user_name: added_information.user_name.clone(),
+        }
+    }
+}
+
+#[derive(Queryable)]
+#[diesel(table_name = transactions)]
+pub struct Transaction {
+    pub id: u32,
+    time: NaiveDateTime,
+    pub description: Option<String>,
+    pub book_name: String,
+    pub user_name: String,
+}
+
+impl ToUserStruct for Transaction {
+    type UserStruct = finance_lib::Transaction;
+    fn to_user_struct(&self) -> Self::UserStruct {
+        Self::UserStruct {
+            id: self.id,
+            time: Some(self.time),
+            description: self.description.clone(),
+        }
+    }
+}
+
+impl<'a> FromUserStruct<'a> for Transaction {
+    type AddedInformation = UserAndBookInfo<'a>;
+    type UserStruct = finance_lib::Transaction;
+
+    fn from_user_struct(
+        user_struct: &Self::UserStruct,
+        added_information: Self::AddedInformation,
+    ) -> Self {
+        Self {
+            id: user_struct.id,
+            time: user_struct.time.unwrap_or_else(|| Utc::now().naive_utc()),
+            description: user_struct.description.clone(),
+            book_name: added_information.book_name.clone(),
+            user_name: added_information.user_name.clone(),
+        }
+    }
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = transactions)]
+pub struct NewTransaction {
+    time: NaiveDateTime,
+    description: Option<String>,
+    book_name: String,
+    user_name: String,
+}
+
+impl ToUserStruct for NewTransaction {
+    type UserStruct = finance_lib::NewTransaction;
+    fn to_user_struct(&self) -> Self::UserStruct {
+        Self::UserStruct {
+            description: self.description.clone(),
+            time: Some(self.time),
+        }
+    }
+}
+
+impl<'a> FromUserStruct<'a> for NewTransaction {
+    type AddedInformation = UserAndBookInfo<'a>;
+    type UserStruct = finance_lib::NewTransaction;
+    fn from_user_struct(
+        user_struct: &Self::UserStruct,
+        added_information: Self::AddedInformation,
+    ) -> Self {
+        Self {
+            description: user_struct.description.clone(),
+            book_name: added_information.book_name.clone(),
+            user_name: added_information.user_name.clone(),
+            time: user_struct.time.unwrap_or_else(|| Utc::now().naive_utc()),
         }
     }
 }

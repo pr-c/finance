@@ -31,6 +31,7 @@ diesel::table! {
     postings (id, transaction_id, book_name, user_name) {
         id -> Unsigned<Integer>,
         transaction_id -> Unsigned<Integer>,
+        valuta -> Nullable<Timestamp>,
         book_name -> Varchar,
         user_name -> Varchar,
         account -> Varchar,
@@ -42,6 +43,7 @@ diesel::table! {
 diesel::table! {
     transactions (id, book_name, user_name) {
         id -> Unsigned<Integer>,
+        time -> Timestamp,
         description -> Nullable<Varchar>,
         book_name -> Varchar,
         user_name -> Varchar,
