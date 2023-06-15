@@ -14,14 +14,19 @@ use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::result::DatabaseErrorKind;
 use model::*;
 use schema::*;
+use snowflake::SnowflakeIdGenerator;
 use std::error::Error;
 use std::net::SocketAddr;
+use std::sync::Mutex;
+
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref SNOWFLAKE_GENERATOR: Mutex<SnowflakeIdGenerator> =
+        Mutex::new(SnowflakeIdGenerator::new(1, 1));
+}
 
 type ConnectionPool = Pool<ConnectionManager<MysqlConnection>>;
-
-sql_function!(
-    fn last_insert_id() -> Unsigned<Integer>
-);
 
 fn get_connection(
     pool: &ConnectionPool,
@@ -52,7 +57,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/book/:book_name/transaction", post(create_transaction))
         .route(
             "/book/:book_name/transaction/:transaction_id",
-            delete(delete_transaction),
+            delete(delete_transaction).get(get_transaction),
         )
         .route(
             "/book/:book_name/transaction/:transaction_id/posting",
@@ -60,7 +65,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .route(
             "/book/:book_name/transaction/:transaction_id/posting/:posting_id",
-            delete(delete_posting),
+            delete(delete_posting).get(get_posting),
         )
         .with_state(pool);
 
@@ -124,14 +129,12 @@ async fn create_book(
         .values(&book)
         .execute(conn);
     if let Err(e) = result {
-        if let diesel::result::Error::DatabaseError(database_error, _) = e {
-            if let DatabaseErrorKind::UniqueViolation = database_error {
-                return Err((
-                    StatusCode::CONFLICT,
-                    format!("Book '{}' already exists.", book.name),
-                )
-                    .into_response());
-            }
+        if let diesel::result::Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _) = e {
+            return Err((
+                StatusCode::CONFLICT,
+                format!("Book '{}' already exists.", book.name),
+            )
+                .into_response());
         }
         Err((StatusCode::INTERNAL_SERVER_ERROR, "Error").into_response())
     } else {
@@ -234,11 +237,10 @@ async fn get_currency(
     let conn = &mut get_connection(&pool)?;
     let result = currencies::table
         .filter(
-            currencies::dsl::symbol.eq(&currency_symbol).and(
-                currencies::dsl::book_name
-                    .eq(&book_name)
-                    .and(currencies::dsl::user_name.eq(&claim.user.name)),
-            ),
+            currencies::dsl::symbol
+                .eq(&currency_symbol)
+                .and(currencies::dsl::book_name.eq(&book_name))
+                .and(currencies::dsl::user_name.eq(&claim.user.name)),
         )
         .load::<Currency>(conn);
     if let Ok(list) = result {
@@ -261,11 +263,10 @@ async fn delete_currency(
     let conn = &mut get_connection(&pool)?;
     let result = diesel::delete(currencies::table)
         .filter(
-            currencies::dsl::user_name.eq(&claim.user.name).and(
-                currencies::dsl::book_name
-                    .eq(&book_name)
-                    .and(currencies::dsl::symbol.eq(&currency_symbol)),
-            ),
+            currencies::dsl::user_name
+                .eq(&claim.user.name)
+                .and(currencies::dsl::book_name.eq(&book_name))
+                .and(currencies::dsl::symbol.eq(&currency_symbol)),
         )
         .execute(conn);
     if let Ok(deleted_amount) = result {
@@ -312,11 +313,10 @@ async fn delete_account(
     let conn = &mut get_connection(&pool)?;
     let result = diesel::delete(accounts::table)
         .filter(
-            accounts::dsl::user_name.eq(claim.user.name).and(
-                accounts::dsl::name
-                    .eq(account_name)
-                    .and(accounts::dsl::book_name.eq(book_name)),
-            ),
+            accounts::dsl::user_name
+                .eq(claim.user.name)
+                .and(accounts::dsl::name.eq(account_name))
+                .and(accounts::dsl::book_name.eq(book_name)),
         )
         .execute(conn);
     match result {
@@ -334,17 +334,16 @@ async fn get_account(
     let conn = &mut get_connection(&pool)?;
     let result = accounts::table
         .filter(
-            accounts::dsl::user_name.eq(claim.user.name).and(
-                accounts::dsl::name
-                    .eq(account_name)
-                    .and(accounts::dsl::book_name.eq(book_name)),
-            ),
+            accounts::dsl::user_name
+                .eq(claim.user.name)
+                .and(accounts::dsl::name.eq(account_name))
+                .and(accounts::dsl::book_name.eq(book_name)),
         )
         .load::<Account>(conn);
 
     match result {
         Ok(accounts) => {
-            if accounts.len() > 0 {
+            if !accounts.is_empty() {
                 Ok(Json(accounts[0].to_user_struct()).into_response())
             } else {
                 Err((StatusCode::NOT_FOUND).into_response())
@@ -361,44 +360,43 @@ async fn create_transaction(
     Json(user_transaction): Json<finance_lib::NewTransaction>,
 ) -> Result<Response, Response> {
     let mut conn = get_connection(&pool)?;
-    let transaction = NewTransaction::from_user_struct(
+    let transaction = match Transaction::from_new_user_struct(
         &user_transaction,
         UserAndBookInfo {
             book_name: &book_name,
             user_name: &claim.user.name,
         },
-    );
+    ) {
+        Ok(t) => t,
+        _ => return Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
+    };
+
     let result = diesel::insert_into(transactions::table)
         .values(&transaction)
         .execute(&mut conn);
+
     match result {
-        Ok(1) => {
-            let id_result = diesel::select(last_insert_id()).get_result::<u32>(&mut conn);
-            match id_result {
-                Ok(id) => Ok((Json(id)).into_response()),
-                _ => Err((StatusCode::IM_A_TEAPOT).into_response()),
-            }
-        }
+        Ok(1) => Ok((Json::from(transaction.id)).into_response()),
         Err(diesel::result::Error::DatabaseError(DatabaseErrorKind::ForeignKeyViolation, e)) => {
             Err((StatusCode::BAD_REQUEST, e.message().to_string()).into_response())
         }
+        Err(e) => Err((e.to_string()).into_response()),
         _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
     }
 }
 
 async fn delete_transaction(
     claim: Claim,
-    Path((book_name, transaction_id)): Path<(String, u32)>,
+    Path((book_name, transaction_id)): Path<(String, i64)>,
     State(pool): State<ConnectionPool>,
 ) -> Result<Response, Response> {
     let mut conn = get_connection(&pool)?;
     let result = diesel::delete(transactions::table)
         .filter(
-            transactions::dsl::user_name.eq(claim.user.name).and(
-                transactions::dsl::book_name
-                    .eq(book_name)
-                    .and(transactions::dsl::id.eq(transaction_id)),
-            ),
+            transactions::dsl::user_name
+                .eq(claim.user.name)
+                .and(transactions::dsl::book_name.eq(book_name))
+                .and(transactions::dsl::id.eq(transaction_id)),
         )
         .execute(&mut conn);
     match result {
@@ -408,32 +406,55 @@ async fn delete_transaction(
     }
 }
 
+async fn get_transaction(
+    claim: Claim,
+    Path((book_name, transaction_id)): Path<(String, i64)>,
+    State(pool): State<ConnectionPool>,
+) -> Result<Response, Response> {
+    let mut conn = get_connection(&pool)?;
+    let result = transactions::table
+        .filter(
+            transactions::dsl::user_name
+                .eq(claim.user.name)
+                .and(transactions::dsl::book_name.eq(book_name))
+                .and(transactions::dsl::id.eq(transaction_id)),
+        )
+        .load::<Transaction>(&mut conn);
+    match result {
+        Ok(accounts) => {
+            if !accounts.is_empty() {
+                Ok(Json(accounts[0].to_user_struct()).into_response())
+            } else {
+                Err((StatusCode::NOT_FOUND).into_response())
+            }
+        }
+        Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
+    }
+}
+
 async fn create_posting(
     claim: Claim,
-    Path((book_name, transaction_id)): Path<(String, u32)>,
+    Path((book_name, transaction_id)): Path<(String, i64)>,
     State(pool): State<ConnectionPool>,
     Json(user_posting): Json<finance_lib::NewPosting>,
 ) -> Result<Response, Response> {
     let mut conn = get_connection(&pool)?;
-    let posting = NewPosting::from_user_struct(
+    let posting = match Posting::from_new_user_struct(
         &user_posting,
         AddedInformationForPosting {
             user_name: &claim.user.name,
             transaction_id: &transaction_id,
             book_name: &book_name,
         },
-    );
+    ) {
+        Ok(p) => p,
+        _ => return Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
+    };
     let result = diesel::insert_into(postings::table)
         .values(&posting)
         .execute(&mut conn);
     match result {
-        Ok(1) => {
-            let id_result = diesel::select(last_insert_id()).get_result::<u32>(&mut conn);
-            match id_result {
-                Ok(id) => Ok((Json(id)).into_response()),
-                _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
-            }
-        }
+        Ok(1) => Ok((Json::from(posting.id)).into_response()),
         Err(diesel::result::Error::DatabaseError(DatabaseErrorKind::ForeignKeyViolation, _)) => {
             Err((StatusCode::BAD_REQUEST).into_response())
         }
@@ -444,22 +465,50 @@ async fn create_posting(
 
 async fn delete_posting(
     claim: Claim,
-    Path((book_name, transaction_id, posting_id)): Path<(String, u32, u32)>,
+    Path((book_name, transaction_id, posting_id)): Path<(String, i64, i64)>,
     State(pool): State<ConnectionPool>,
 ) -> Result<Response, Response> {
     let mut conn = get_connection(&pool)?;
-    let result = diesel::delete(postings::table).filter(
-        postings::dsl::user_name.eq(claim.user.name).and(
-            postings::dsl::book_name.eq(book_name).and(
-                postings::dsl::transaction_id
-                    .eq(transaction_id)
+    let result = diesel::delete(postings::table)
+        .filter(
+            postings::dsl::user_name.eq(claim.user.name).and(
+                postings::dsl::book_name
+                    .eq(book_name)
+                    .and(postings::dsl::transaction_id.eq(transaction_id))
                     .and(postings::dsl::id.eq(posting_id)),
             ),
-        ),
-    ).execute(&mut conn);
+        )
+        .execute(&mut conn);
     match result {
         Ok(1) => Ok(().into_response()),
         Ok(0) => Err((StatusCode::NOT_FOUND).into_response()),
-        _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response())
+        _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
+    }
+}
+
+async fn get_posting(
+    claim: Claim,
+    Path((book_name, transaction_id, posting_id)): Path<(String, i64, i64)>,
+    State(pool): State<ConnectionPool>,
+) -> Result<Response, Response> {
+    let mut conn = get_connection(&pool)?;
+    let result = postings::table
+        .filter(
+            postings::dsl::user_name
+                .eq(claim.user.name)
+                .and(postings::dsl::book_name.eq(book_name))
+                .and(postings::dsl::transaction_id.eq(transaction_id))
+                .and(postings::dsl::id.eq(posting_id)),
+        )
+        .load::<Posting>(&mut conn);
+    match result {
+        Ok(postings) => {
+            if !postings.is_empty() {
+                Ok(Json(postings[0].to_user_struct()).into_response())
+            } else {
+                Err((StatusCode::NOT_FOUND).into_response())
+            }
+        }
+        Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
     }
 }

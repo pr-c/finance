@@ -40,7 +40,7 @@ CREATE TABLE currencies
 
 CREATE TABLE transactions
 (
-    id          INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
+    id          BIGINT           NOT NULL,
     time        TIMESTAMP        NOT NULL,
     description VARCHAR(1000),
     book_name   VARCHAR(100)     NOT NULL,
@@ -52,12 +52,12 @@ CREATE TABLE transactions
 
 CREATE TABLE postings
 (
-    id             INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
-    transaction_id INTEGER UNSIGNED NOT NULL,
+    id             BIGINT         NOT NULL,
+    transaction_id BIGINT         NOT NULL,
     valuta         TIMESTAMP,
     book_name      VARCHAR(100)     NOT NULL,
     user_name      VARCHAR(100)     NOT NULL,
-    account_name        VARCHAR(100)     NOT NULL,
+    account_name   VARCHAR(100)     NOT NULL,
     currency       VARCHAR(10)      NOT NULL,
     amount         INTEGER          NOT NULL,
     PRIMARY KEY (id, transaction_id, book_name, user_name),

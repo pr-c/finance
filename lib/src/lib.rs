@@ -22,7 +22,7 @@ pub struct Account {
 
 #[derive(Serialize, Deserialize)]
 pub struct Transaction {
-    pub id: u32,
+    pub id: i64,
     pub time: Option<NaiveDateTime>,
     pub description: Option<String>,
 }
@@ -35,7 +35,7 @@ pub struct NewTransaction {
 
 #[derive(Serialize, Deserialize)]
 pub struct Posting {
-    pub id: u32,
+    pub id: i64,
     pub valuta: Option<NaiveDateTime>,
     pub account_name: String,
     pub currency: String,

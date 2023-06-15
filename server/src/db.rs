@@ -1,4 +1,7 @@
+pub mod diesel_extension;
+
 use diesel::r2d2::{ConnectionManager, Pool};
+
 use diesel::MysqlConnection;
 use dotenvy::dotenv;
 use std::env;
