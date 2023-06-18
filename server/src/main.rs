@@ -42,6 +42,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let router = Router::new()
         .route("/", get(root))
+        .route("/books/", get(get_books))
         .route("/book/", post(create_book))
         .route("/book/:book_name", delete(delete_book).get(get_book))
         .route("/book/:book_name/currency/", post(create_currency))
@@ -49,12 +50,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             "/book/:book_name/currency/:currency_symbol",
             get(get_currency).delete(delete_currency),
         )
+        .route("/book/:book_name/currencies", get(get_currencies))
         .route("/book/:book_name/account/", post(create_account))
+        .route("/book/:book_name/accounts", get(get_accounts))
         .route(
             "/book/:book_name/account/:account_name",
             delete(delete_account).get(get_account),
         )
         .route("/book/:book_name/transaction", post(create_transaction))
+        .route("/book/:book_name/transactions", get(get_transactions))
         .route(
             "/book/:book_name/transaction/:transaction_id",
             delete(delete_transaction).get(get_transaction),
@@ -62,6 +66,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route(
             "/book/:book_name/transaction/:transaction_id/posting",
             post(create_posting),
+        )
+        .route(
+            "/book/:book_name/transaction/:transaction_id/postings",
+            get(get_postings),
         )
         .route(
             "/book/:book_name/transaction/:transaction_id/posting/:posting_id",
@@ -194,6 +202,18 @@ async fn get_book(
     }
 }
 
+async fn get_books(claim: Claim, State(pool): State<ConnectionPool>) -> Result<Response, Response> {
+    let conn = &mut get_connection(&pool)?;
+    let result = books::table
+        .select(books::dsl::name)
+        .filter(books::dsl::user_name.eq(claim.user.name))
+        .load::<String>(conn);
+    match result {
+        Ok(list) => Ok(Json(list).into_response()),
+        _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
+    }
+}
+
 async fn create_currency(
     claim: Claim,
     State(pool): State<ConnectionPool>,
@@ -252,6 +272,26 @@ async fn get_currency(
         }
     } else {
         Err((StatusCode::INTERNAL_SERVER_ERROR).into_response())
+    }
+}
+
+async fn get_currencies(
+    claim: Claim,
+    Path(book_name): Path<String>,
+    State(pool): State<ConnectionPool>,
+) -> Result<Response, Response> {
+    let conn = &mut get_connection(&pool)?;
+    let result = currencies::table
+        .select(currencies::dsl::symbol)
+        .filter(
+            currencies::dsl::user_name
+                .eq(claim.user.name)
+                .and(currencies::dsl::book_name.eq(book_name)),
+        )
+        .load::<String>(conn);
+    match result {
+        Ok(list) => Ok(Json(list).into_response()),
+        _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
     }
 }
 
@@ -353,6 +393,26 @@ async fn get_account(
     }
 }
 
+async fn get_accounts(
+    claim: Claim,
+    Path(book_name): Path<String>,
+    State(pool): State<ConnectionPool>,
+) -> Result<Response, Response> {
+    let conn = &mut get_connection(&pool)?;
+    let result = accounts::table
+        .select(accounts::dsl::name)
+        .filter(
+            accounts::dsl::user_name
+                .eq(claim.user.name)
+                .and(accounts::dsl::book_name.eq(book_name)),
+        )
+        .load::<String>(conn);
+    match result {
+        Ok(list) => Ok(Json(list).into_response()),
+        _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
+    }
+}
+
 async fn create_transaction(
     claim: Claim,
     Path(book_name): Path<String>,
@@ -429,6 +489,26 @@ async fn get_transaction(
             }
         }
         Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
+    }
+}
+
+async fn get_transactions(
+    claim: Claim,
+    Path(book_name): Path<String>,
+    State(pool): State<ConnectionPool>,
+) -> Result<Response, Response> {
+    let conn = &mut get_connection(&pool)?;
+    let result = transactions::table
+        .select(transactions::dsl::id)
+        .filter(
+            transactions::dsl::user_name
+                .eq(claim.user.name)
+                .and(transactions::dsl::book_name.eq(book_name)),
+        )
+        .load::<i64>(conn);
+    match result {
+        Ok(list) => Ok(Json(list).into_response()),
+        _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
     }
 }
 
@@ -510,5 +590,26 @@ async fn get_posting(
             }
         }
         Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
+    }
+}
+
+async fn get_postings(
+    claim: Claim,
+    Path((book_name, transaction_id)): Path<(String, i64)>,
+    State(pool): State<ConnectionPool>,
+) -> Result<Response, Response> {
+    let conn = &mut get_connection(&pool)?;
+    let result = postings::table
+        .select(postings::dsl::id)
+        .filter(
+            postings::dsl::user_name
+                .eq(claim.user.name)
+                .and(postings::dsl::book_name.eq(book_name))
+                .and(postings::dsl::transaction_id.eq(transaction_id)),
+        )
+        .load::<i64>(conn);
+    match result {
+        Ok(list) => Ok(Json(list).into_response()),
+        _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
     }
 }

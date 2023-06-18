@@ -240,7 +240,7 @@ impl<'a> FromNewUserStruct<'a> for Posting {
             account_name: new_user_struct.account_name.clone(),
             currency: new_user_struct.currency.clone(),
             transaction_id: *added_information.transaction_id,
-            valuta: new_user_struct.valuta.clone(),
+            valuta: new_user_struct.valuta,
             book_name: added_information.book_name.clone(),
             user_name: added_information.user_name.clone(),
         })
