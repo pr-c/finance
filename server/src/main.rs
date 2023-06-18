@@ -44,8 +44,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/", get(root))
         .route("/books/", get(get_books))
         .route("/book/", post(create_book))
+        .route("/book/:book_name/update", post(update_book))
         .route("/book/:book_name", delete(delete_book).get(get_book))
         .route("/book/:book_name/currency/", post(create_currency))
+        .route("/book/:book_name/currency/update", post(update_currency))
         .route(
             "/book/:book_name/currency/:currency_symbol",
             get(get_currency).delete(delete_currency),
@@ -150,6 +152,33 @@ async fn create_book(
     }
 }
 
+async fn update_book(
+    claim: Claim,
+    State(pool): State<ConnectionPool>,
+    Path(book_name): Path<String>,
+    Json(user_book): Json<finance_lib::Book>,
+) -> Result<Response, Response> {
+    let conn = &mut get_connection(&pool)?;
+    let book = Book::from_user_struct(
+        &user_book,
+        AddedInformationForBook {
+            user_name: &claim.user.name,
+        },
+    );
+    let result = diesel::update(books::table)
+        .set(book)
+        .filter(
+            books::dsl::name
+                .eq(book_name)
+                .and(books::dsl::user_name.eq(claim.user.name)),
+        )
+        .execute(conn);
+    match result {
+        Ok(1) => Ok(().into_response()),
+        _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
+    }
+}
+
 async fn delete_book(
     claim: Claim,
     Path(book_name): Path<String>,
@@ -246,6 +275,35 @@ async fn create_currency(
         Err((StatusCode::INTERNAL_SERVER_ERROR).into_response())
     } else {
         Ok(().into_response())
+    }
+}
+
+async fn update_currency(
+    claim: Claim,
+    State(pool): State<ConnectionPool>,
+    Path((book_name, symbol_name)): Path<(String, String)>,
+    Json(user_currency): Json<finance_lib::Currency>,
+) -> Result<Response, Response> {
+    let conn = &mut get_connection(&pool)?;
+    let currency = Currency::from_user_struct(
+        &user_currency,
+        UserAndBookInfo {
+            user_name: &claim.user.name,
+            book_name: &book_name,
+        },
+    );
+    let result = diesel::update(currencies::table)
+        .set(currency)
+        .filter(
+            currencies::dsl::book_name
+                .eq(book_name)
+                .and(currencies::dsl::user_name.eq(claim.user.name))
+                .and(currencies::dsl::symbol.eq(symbol_name)),
+        )
+        .execute(conn);
+    match result {
+        Ok(1) => Ok(().into_response()),
+        _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
     }
 }
 

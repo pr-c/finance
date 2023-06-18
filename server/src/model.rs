@@ -9,7 +9,7 @@ pub struct User {
     pub bearer: Option<String>,
 }
 
-#[derive(Queryable, Insertable)]
+#[derive(Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = books)]
 pub struct Book {
     pub name: String,
@@ -47,7 +47,7 @@ impl<'a> FromUserStruct<'a> for Book {
     }
 }
 
-#[derive(Queryable, Insertable)]
+#[derive(Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = currencies)]
 pub struct Currency {
     symbol: String,
