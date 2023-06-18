@@ -126,7 +126,7 @@ impl<'a> FromUserStruct<'a> for Account {
     }
 }
 
-#[derive(Queryable, Insertable)]
+#[derive(Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = transactions)]
 pub struct Transaction {
     pub id: i64,

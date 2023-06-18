@@ -59,6 +59,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             "/book/:book_name/account/:account_name",
             delete(delete_account).get(get_account),
         )
+        .route(
+            "/book/:book_name/transaction/:transaction_id/update",
+            post(update_transaction),
+        )
         .route("/book/:book_name/transaction", post(create_transaction))
         .route("/book/:book_name/transactions", get(get_transactions))
         .route(
@@ -499,6 +503,35 @@ async fn create_transaction(
             Err((StatusCode::BAD_REQUEST, e.message().to_string()).into_response())
         }
         Err(e) => Err((e.to_string()).into_response()),
+        _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
+    }
+}
+
+async fn update_transaction(
+    claim: Claim,
+    Path((book_name, transaction_id)): Path<(String, i64)>,
+    State(pool): State<ConnectionPool>,
+    Json(user_transaction): Json<finance_lib::Transaction>,
+) -> Result<Response, Response> {
+    let conn = &mut get_connection(&pool)?;
+    let transaction = Transaction::from_user_struct(
+        &user_transaction,
+        UserAndBookInfo {
+            user_name: &claim.user.name,
+            book_name: &book_name,
+        },
+    );
+    let result = diesel::update(transactions::table)
+        .set(transaction)
+        .filter(
+            transactions::dsl::user_name
+                .eq(claim.user.name)
+                .and(transactions::dsl::book_name.eq(book_name))
+                .and(transactions::dsl::id.eq(transaction_id)),
+        )
+        .execute(conn);
+    match result {
+        Ok(1) => Ok(().into_response()),
         _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
     }
 }
