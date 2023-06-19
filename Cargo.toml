@@ -1,3 +1,3 @@
 [workspace]
-members = ["server", "lib"]
+members = ["server", "lib", "client_tui"]
 resolver = "2"
