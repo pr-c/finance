@@ -197,6 +197,7 @@ pub struct Posting {
     pub account_name: String,
     pub currency: String,
     pub amount: i32,
+    pub budget: bool,
 }
 
 pub struct AddedInformationForPosting<'a> {
@@ -221,6 +222,7 @@ impl<'a> FromUserStruct<'a> for Posting {
             transaction_id: *added_information.transaction_id,
             user_name: added_information.user_name.clone(),
             valuta: user_struct.valuta,
+            budget: user_struct.budget.unwrap_or(false),
         }
     }
 }
@@ -243,6 +245,7 @@ impl<'a> FromNewUserStruct<'a> for Posting {
             valuta: new_user_struct.valuta,
             book_name: added_information.book_name.clone(),
             user_name: added_information.user_name.clone(),
+            budget: new_user_struct.budget,
         })
     }
 }
@@ -256,6 +259,23 @@ impl ToUserStruct for Posting {
             currency: self.currency.clone(),
             id: self.id,
             valuta: self.valuta,
+            budget: Some(self.budget),
+        }
+    }
+}
+
+#[derive(Queryable)]
+pub struct CurrencyAmount {
+    pub currency: String,
+    pub amount: Option<i64>,
+}
+
+impl ToUserStruct for CurrencyAmount {
+    type UserStruct = finance_lib::CurrencyAmount;
+    fn to_user_struct(&self) -> Self::UserStruct {
+        Self::UserStruct {
+            currency: self.currency.clone(),
+            amount: self.amount,
         }
     }
 }

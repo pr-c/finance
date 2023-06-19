@@ -37,6 +37,7 @@ diesel::table! {
         account_name -> Varchar,
         currency -> Varchar,
         amount -> Integer,
+        budget -> Bool,
     }
 }
 

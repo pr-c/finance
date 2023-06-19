@@ -40,6 +40,7 @@ pub struct Posting {
     pub account_name: String,
     pub currency: String,
     pub amount: i32,
+    pub budget: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -48,4 +49,11 @@ pub struct NewPosting {
     pub account_name: String,
     pub currency: String,
     pub amount: i32,
+    pub budget: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CurrencyAmount {
+    pub currency: String,
+    pub amount: Option<i64>,
 }

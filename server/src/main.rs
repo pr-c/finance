@@ -9,6 +9,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{async_trait, Json, Router};
 use axum_auth::AuthBearer;
+use diesel::dsl::sum;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
 use diesel::result::DatabaseErrorKind;
@@ -80,6 +81,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route(
             "/book/:book_name/transaction/:transaction_id/posting/:posting_id",
             delete(delete_posting).get(get_posting),
+        )
+        .route(
+            "/book/:book_name/account/:account_name/value",
+            get(account_value),
+        )
+        .route(
+            "/book/:book_name/account/:account_name/real_value",
+            get(real_account_value),
         )
         .with_state(pool);
 
@@ -701,6 +710,56 @@ async fn get_postings(
         .load::<i64>(conn);
     match result {
         Ok(list) => Ok(Json(list).into_response()),
+        _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
+    }
+}
+
+async fn real_account_value(
+    claim: Claim,
+    Path((book_name, account_name)): Path<(String, String)>,
+    State(pool): State<ConnectionPool>,
+) -> Result<Response, Response> {
+    let conn = &mut get_connection(&pool)?;
+    let result = postings::table
+        .group_by(postings::dsl::currency)
+        .filter(
+            postings::dsl::user_name
+                .eq(claim.user.name)
+                .and(postings::dsl::book_name.eq(book_name))
+                .and(postings::dsl::account_name.eq(account_name))
+                .and(postings::dsl::budget.eq(false)),
+        )
+        .select((postings::dsl::currency, sum(postings::dsl::amount)))
+        .load::<CurrencyAmount>(conn);
+    match result {
+        Ok(list) => {
+            let user_structs: Vec<_> = list.iter().map(|i| i.to_user_struct()).collect();
+            Ok(Json(user_structs).into_response())
+        }
+        _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
+    }
+}
+async fn account_value(
+    claim: Claim,
+    Path((book_name, account_name)): Path<(String, String)>,
+    State(pool): State<ConnectionPool>,
+) -> Result<Response, Response> {
+    let conn = &mut get_connection(&pool)?;
+    let result = postings::table
+        .group_by(postings::dsl::currency)
+        .filter(
+            postings::dsl::user_name
+                .eq(claim.user.name)
+                .and(postings::dsl::book_name.eq(book_name))
+                .and(postings::dsl::account_name.eq(account_name)),
+        )
+        .select((postings::dsl::currency, sum(postings::dsl::amount)))
+        .load::<CurrencyAmount>(conn);
+    match result {
+        Ok(list) => {
+            let user_structs: Vec<_> = list.iter().map(|i| i.to_user_struct()).collect();
+            Ok(Json(user_structs).into_response())
+        }
         _ => Err((StatusCode::INTERNAL_SERVER_ERROR).into_response()),
     }
 }

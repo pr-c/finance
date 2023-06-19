@@ -60,6 +60,7 @@ CREATE TABLE postings
     account_name   VARCHAR(100)     NOT NULL,
     currency       VARCHAR(10)      NOT NULL,
     amount         INTEGER          NOT NULL,
+    budget         BOOLEAN        NOT NULL,
     PRIMARY KEY (id, transaction_id, book_name, user_name),
     FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE CASCADE ON UPDATE CASCADE,
     FOREIGN KEY (book_name) REFERENCES books (name) ON DELETE CASCADE ON UPDATE CASCADE,
